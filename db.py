@@ -26,6 +26,7 @@ def _get_conn() -> sqlite3.Connection:
         _conn = sqlite3.connect(get_db_path(), check_same_thread=False)
         _conn.execute("PRAGMA journal_mode=WAL")
         _conn.execute("PRAGMA foreign_keys=ON")
+        _conn.row_factory = sqlite3.Row   # rows support .keys() and dict access
     return _conn
 
 

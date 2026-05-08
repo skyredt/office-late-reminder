@@ -217,50 +217,89 @@ def handle_custom_text(req_id: str, user_id: int, text: str) -> WorkflowResult:
 
 
 def handle_confirm(req_id: str, user_id: int) -> WorkflowResult:
-    """User confirmed — send the message."""
+    """User confirmed — atomically transition to SENDING then send the message."""
     req = _prompt_repo.get(req_id)
     if not req:
         return _reject_unknown(req_id, user_id)
-    if not req.is_active() or str(user_id) != req.owner_user_id:
+    if str(user_id) != req.owner_user_id:
         return _reject(req_id, user_id, req)
-    if not req.preview_text:
-        return WorkflowResult(ok=False, message="No message to send. Try /testprompt to start fresh.")
 
-    # Idempotency: check already sent
-    if req.status == RequestStatus.SENT:
-        logger.info("Duplicate confirm ignored req=%s", req_id[-8:])
-        return WorkflowResult(ok=True, message="Message already sent.", final_text=req.preview_text)
+    # ── Atomic state transition: awaiting_confirmation → sending ───────────────
+    # If another confirm call wins the race, this returns False and we skip send.
+    transitioned = _prompt_repo.transition_status(
+        req_id,
+        from_status=RequestStatus.AWAITING_CONFIRMATION,
+        to_status=RequestStatus.SENDING,
+    )
+    if not transitioned:
+        # Could be: already sent, already failed, already cancelled, or expired
+        req_fresh = _prompt_repo.get(req_id)
+        if req_fresh and req_fresh.status == RequestStatus.SENT:
+            return WorkflowResult(
+                ok=True,
+                message="Message already sent.",
+                final_text=req_fresh.preview_text,
+            )
+        return WorkflowResult(
+            ok=False,
+            message="This request is no longer awaiting confirmation. "
+                    "It may have already been sent, cancelled, expired, or handled.",
+            error_code="STALE_REQUEST",
+        )
 
-    _prompt_repo.update_status(req_id, RequestStatus.SENT)
+    # ── Send via Telethon ───────────────────────────────────────────────────
+    try:
+        if req.choice_type == "end_work":
+            result = delivery.send_end_work()
+        elif req.choice_type in ("extend_preset", "extend_custom"):
+            result = delivery.send_extend(req.custom_text or "")
+        else:
+            result = None
+    except Exception as e:
+        logger.error("Delivery exception req=%s: %s", req_id[-8:], e)
+        _prompt_repo.transition_status(req_id, RequestStatus.SENDING, RequestStatus.FAILED)
+        _prompt_repo.mark_failed(req_id, "DELIVERY_ERROR", str(e))
+        return WorkflowResult(
+            ok=False,
+            message=f"⚠️ Send failed: {e}\n\n"
+                    f"Here's the exact message — copy and send it yourself:\n\n"
+                    f"{req.preview_text}",
+            final_text=req.preview_text,
+            error_code="DELIVERY_ERROR",
+        )
 
-    if req.choice_type in ("end_work", "extend_preset", "extend_custom"):
-        result = delivery.send_end_work() if req.choice_type == "end_work" else delivery.send_extend(req.custom_text or "")
-    else:
-        result = None
-
+    # ── Record outcome ──────────────────────────────────────────────────────
     if result and result.success:
-        _prompt_repo.mark_sent(req_id)
-        _audit.log(event_type="message_sent", actor_user_id=user_id, request_id=req_id, outcome="OK")
+        _prompt_repo.transition_status(req_id, RequestStatus.SENDING, RequestStatus.SENT)
+        _audit.log(
+            event_type="message_sent", actor_user_id=user_id,
+            request_id=req_id, outcome="OK",
+        )
         return WorkflowResult(
             ok=True,
             message="Message sent to your wife.",
             final_text=result.final_text,
         )
-    elif result:
-        _prompt_repo.mark_failed(req_id, result.error_code or "UNKNOWN", result.message)
-        # Fallback: show the exact final message for manual copy
+    else:
+        _prompt_repo.transition_status(req_id, RequestStatus.SENDING, RequestStatus.FAILED)
+        err_code = result.error_code if result else "UNKNOWN"
+        err_msg  = result.message  if result else "Unexpected state"
+        _prompt_repo.mark_failed(req_id, err_code, err_msg)
+        _audit.log(
+            event_type="message_failed", actor_user_id=user_id,
+            request_id=req_id, outcome="FAILED",
+            details_masked=f"code={err_code}",
+        )
         return WorkflowResult(
             ok=False,
             message=(
                 f"⚠️ Could not send automatically.\n\n"
                 f"Here's the exact message — copy and send it yourself:\n\n"
-                f"{result.final_text}"
+                f"{result.final_text if result else req.preview_text}"
             ),
-            final_text=result.final_text,
-            error_code=result.error_code,
+            final_text=result.final_text if result else req.preview_text,
+            error_code=err_code,
         )
-    else:
-        return WorkflowResult(ok=False, message="Unexpected state.", final_text=req.preview_text)
 
 
 def handle_skip(req_id: str, user_id: int) -> WorkflowResult:

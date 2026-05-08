@@ -95,6 +95,29 @@ class PromptRepository:
             )
         return cur.rowcount > 0
 
+    def transition_status(
+        self,
+        request_id: str,
+        from_status: RequestStatus,
+        to_status: RequestStatus,
+    ) -> bool:
+        """
+        Atomically transition a request's status.
+        Returns True only if the request existed and was in from_status.
+        This prevents double-send race conditions.
+        """
+        now = utc_now().isoformat()
+        with db.get_db() as conn:
+            cur = conn.execute(
+                """
+                UPDATE prompt_requests
+                SET status = ?, updated_at = ?
+                WHERE id = ? AND status = ?
+                """,
+                (to_status.value, now, request_id, from_status.value),
+            )
+        return cur.rowcount == 1
+
     def set_choice(
         self,
         request_id: str,
@@ -182,8 +205,7 @@ class PromptRepository:
             )
 
     def _row_to_model(self, row) -> PromptRequest:
-        def _dt(key):
-            val = row[key]
+        def _dt(val):
             return parse_iso_utc(val) if val else None
 
         return PromptRequest(
@@ -194,15 +216,15 @@ class PromptRepository:
             choice_type=row["choice_type"],
             custom_text=row["custom_text"],
             preview_text=row["preview_text"],
-            created_at=_dt("created_at"),
-            updated_at=_dt("updated_at"),
-            expires_at=_dt("expires_at"),
-            nudge_due_at=_dt("nudge_due_at"),
-            nudged_at=_dt("nudged_at"),
-            confirmed_at=_dt("confirmed_at"),
-            sent_at=_dt("sent_at"),
-            cancelled_at=_dt("cancelled_at"),
-            failed_at=_dt("failed_at"),
+            created_at=_dt(row["created_at"]),
+            updated_at=_dt(row["updated_at"]),
+            expires_at=_dt(row["expires_at"]),
+            nudge_due_at=_dt(row["nudge_due_at"]),
+            nudged_at=_dt(row["nudged_at"]),
+            confirmed_at=_dt(row["confirmed_at"]),
+            sent_at=_dt(row["sent_at"]),
+            cancelled_at=_dt(row["cancelled_at"]),
+            failed_at=_dt(row["failed_at"]),
             error_code=row["error_code"],
             error_message=row["error_message"],
         )

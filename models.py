@@ -12,6 +12,7 @@ class RequestStatus(str, Enum):
     AWAITING_CHOICE       = "awaiting_choice"
     AWAITING_CUSTOM_TEXT  = "awaiting_custom_text"
     AWAITING_CONFIRMATION = "awaiting_confirmation"
+    SENDING               = "sending"
     SENT                  = "sent"
     CANCELLED             = "cancelled"
     EXPIRED               = "expired"

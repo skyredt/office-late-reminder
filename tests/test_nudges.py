@@ -14,10 +14,11 @@ class TestNudges:
             m.setenv("WIFE_TELEGRAM_TARGET", "+6588117751")
 
             import importlib, db
-            db.init_db()
-            from repositories.prompt_repository import PromptRepository
-            importlib.reload(db)
+            db.init_db()   # creates tables
 
+            from repositories.prompt_repository import PromptRepository
+            # Ensure module is fresh with in-memory DB
+            importlib.reload(db)
             repo = PromptRepository()
             req = repo.create(131288677)
             repo.mark_sent(req.id)

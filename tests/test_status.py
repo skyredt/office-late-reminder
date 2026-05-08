@@ -2,6 +2,7 @@
 tests/test_status.py — /status shows all required fields.
 """
 
+from unittest.mock import patch
 import pytest, sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
