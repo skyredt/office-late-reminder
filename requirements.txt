@@ -1,0 +1,5 @@
+python-telegram-bot==22.1
+telethon==1.36.0
+APScheduler==3.11.0
+python-dotenv==1.0.1
+pytz==2025.2
