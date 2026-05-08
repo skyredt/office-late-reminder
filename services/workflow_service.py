@@ -62,7 +62,7 @@ def main_keyboard(req_id: str) -> list:
     from utils.callback_data import pack
     return [
         [InlineKeyboardButton("End work", callback_data=pack("end_work", req_id))],
-        [InlineKeyboardButton("Extend", callback_data=pack("extend_preset", req_id, "custom"))],
+        [InlineKeyboardButton("Extend", callback_data=pack("extend_menu", req_id))],
         [InlineKeyboardButton("No message today", callback_data=pack("skip", req_id))],
     ]
 
@@ -395,3 +395,18 @@ def _reject_unknown(req_id: str, user_id: int) -> WorkflowResult:
 def _mask(uid: int) -> str:
     s = str(uid)
     return f"user_{'x' * (len(s) - 3)}{s[-3:]}"
+
+def handle_extend_menu(req_id: str, user_id: int) -> WorkflowResult:
+    """Show the duration-selection sub-menu."""
+    req = _prompt_repo.get(req_id)
+    if not req:
+        return _reject_unknown(req_id, user_id)
+    if not req.is_active() or str(user_id) != req.owner_user_id:
+        return _reject(req_id, user_id, req)
+
+    return WorkflowResult(
+        ok=True,
+        message="How long do you need to stay back?",
+        buttons=duration_keyboard(req_id),
+        next_state=req.status.value,
+    )
