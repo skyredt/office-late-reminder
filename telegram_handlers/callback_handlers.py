@@ -1,6 +1,6 @@
 """
 telegram_handlers/callback_handlers.py — Telegram callback query router.
-Calls workflowService for business logic and sends Telegram reply.
+Calls workflow_service module for business logic and sends Telegram reply.
 """
 
 import logging
@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 def build_dispatcher(workflow, nudge_svc):
     """
     Returns the async callback query handler.
-    Accepts workflow and nudge_svc as injected dependencies to avoid circular imports.
+    Accepts workflow module and nudge_svc as injected dependencies.
     """
 
     async def cb_root(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -88,3 +88,22 @@ def build_dispatcher(workflow, nudge_svc):
             await query.edit_message_text(text=result.message)
 
     return cb_root
+
+
+# ── Top-level export for app.py ─────────────────────────────────────────────
+def _make_cb_root():
+    """Build cb_root with real service instances injected. Called at module load."""
+    import services.workflow_service as workflow_mod
+    import services.nudge_service as nudge_mod
+    from repositories.prompt_repository import PromptRepository
+
+    repo = PromptRepository()
+
+    # Store on module for tests
+    import telegram_handlers.callback_handlers as m
+    m.workflow = workflow_mod
+    m.nudge_svc = nudge_mod
+
+    return build_dispatcher(workflow_mod, nudge_mod)
+
+cb_root = _make_cb_root()
