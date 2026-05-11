@@ -26,6 +26,15 @@ _scheduler = None
 _scheduler_ref = None
 
 
+
+def _utc_naive_to_scheduler_tz(dt):
+    """Convert a naive UTC datetime to timezone-aware Singapore time for APScheduler."""
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        dt = pytz.UTC.localize(dt)
+    return dt.astimezone(pytz.timezone(config.TIMEZONE_STR))
+
 def _deliver_nudge(request_id: str, chat_id: int, bot):
     """
     Called by APScheduler when a nudge is due.
@@ -90,7 +99,7 @@ def _scheduled_prompt(chat_id: int, bot):
     # ── Schedule nudge using nudge_due_at stored in SQLite by prompt_repo.create() ──
     if result.request_id and _scheduler_ref is not None:
         req = prompt_repo.PromptRepository().get(result.request_id)
-        nudge_time = req.nudge_due_at if req and req.nudge_due_at else None
+        nudge_time = _utc_naive_to_scheduler_tz(req.nudge_due_at) if req and req.nudge_due_at else None
 
         if nudge_time:
             _scheduler_ref.add_job(
@@ -134,7 +143,7 @@ def start(app) -> BlockingScheduler:
         _scheduler.add_job(
             _deliver_nudge,
             "date",
-            run_date=req.nudge_due_at,
+            run_date=_utc_naive_to_scheduler_tz(req.nudge_due_at),
             args=[req.id, config.MY_USER_ID, app.bot],
             id=f"nudge_{req.id}",
             misfire_grace_time=300,
