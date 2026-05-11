@@ -10,6 +10,22 @@ from services import auth_service
 logger = logging.getLogger(__name__)
 
 
+async def reply_plain(update: Update, text: str, quote: bool = False):
+    try:
+        await update.message.reply_text(text, quote=quote)
+    except Exception as e:
+        logger.error("reply_plain failed: %s", e)
+
+
+async def reply_with_keyboard(update: Update, text: str, keyboard=None, quote: bool = False):
+    try:
+        await update.message.reply_text(
+            text, reply_markup=InlineKeyboardMarkup(keyboard) if keyboard else None, quote=quote
+        )
+    except Exception as e:
+        logger.error("reply_with_keyboard failed: %s", e)
+
+
 async def safe_reply(update: Update, text: str, reply_markup=None, quote=False):
     """Reply to user, logging but not crashing on Telegram errors."""
     try:

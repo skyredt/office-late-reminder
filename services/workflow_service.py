@@ -44,15 +44,19 @@ class WorkflowResult:
         final_text: str = "",
         error_code: str | None = None,
         expired: bool = False,
+        request_id: str = "",
+        **kwargs,
     ):
         self.ok = ok
         self.message = message
         self.preview_text = preview_text
         self.buttons = buttons or []
         self.next_state = next_state
-        self.final_text = final_text  # for fallback display
+        self.final_text = final_text
         self.error_code = error_code
         self.expired = expired
+        self.request_id = request_id
+
 
 
 # ── Inline keyboard helpers ─────────────────────────────────────────────────
@@ -107,7 +111,8 @@ def start_prompt(user_id: int) -> WorkflowResult:
         message="End work or extend?",
         buttons=main_keyboard(req.id),
         next_state=RequestStatus.AWAITING_CHOICE.value,
-        preview_text="",
+        preview_text=req.id,
+        request_id=req.id,
     )
 
 

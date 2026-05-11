@@ -23,7 +23,11 @@ def get_db_path() -> str:
 def _get_conn() -> sqlite3.Connection:
     global _conn
     if _conn is None:
-        _conn = sqlite3.connect(get_db_path(), check_same_thread=False)
+        db_path = get_db_path()
+        if os.getenv("USE_MEMORY_DB", "").lower() == "true" or db_path == ":memory:":
+            _conn = sqlite3.connect(":memory:", check_same_thread=False)
+        else:
+            _conn = sqlite3.connect(db_path, check_same_thread=False)
         _conn.execute("PRAGMA journal_mode=WAL")
         _conn.execute("PRAGMA foreign_keys=ON")
         _conn.row_factory = sqlite3.Row   # rows support .keys() and dict access
@@ -109,3 +113,10 @@ def init_db():
             (today,),
         )
     print(f"[db] Initialised at {get_db_path()}")
+
+
+def reset_db():
+    """Reset the module-level connection (used by tests to reinit :memory: dbs)."""
+    global _conn
+    _conn = None
+    init_db()

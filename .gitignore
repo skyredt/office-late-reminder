@@ -1,0 +1,27 @@
+# Environment
+.env
+
+# Database
+*.db
+*.db-shm
+*.db-wal
+
+# Session files
+*.session
+*.session.old
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Logs
+*.log
+app.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test artifacts
+:memory:*

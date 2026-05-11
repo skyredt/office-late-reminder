@@ -18,7 +18,7 @@ import services.workflow_service as workflow
 import services.nudge_service as nudge_svc
 import repositories.prompt_repository as prompt_repo
 import telegram_handlers.common as common
-from telegram import InlineKeyboardButton
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 
 logger = logging.getLogger(__name__)
@@ -62,25 +62,51 @@ def _deliver_nudge(request_id: str, chat_id: int, bot):
 
 
 def _scheduled_prompt(chat_id: int, bot):
-    """Called at 6 PM Mon–Fri. Starts the workflow and schedules the nudge."""
+    """Called at 6 PM Mon–Fri. Starts the workflow and sends the prompt to Telegram."""
+    import asyncio
     from datetime import datetime
-    req = workflow.start_prompt(chat_id)
 
-    # Schedule nudge
-    nudge_time = datetime.now(pytz.timezone(config.TIMEZONE_STR))
-    nudge_time = nudge_time.replace(second=0, microsecond=0)
-    nudge_time = nudge_time.replace(minute=nudge_time.minute + config.NUDGE_DELAY_MINUTES)
+    result = workflow.start_prompt(chat_id)
 
-    if _scheduler_ref is not None:
-        _scheduler_ref.add_job(
-            _deliver_nudge,
-            "date",
-            run_date=nudge_time,
-            args=[req.preview_text.split("||")[0] if "||" in (req.preview_text or "") else req.message, chat_id, bot],
-            id=f"nudge_{req.preview_text}",
-            misfire_grace_time=60,
-            replace_existing=True,
-        )
+    if result.ok:
+        # ── Send the prompt message to the user's Telegram chat ────────────
+        try:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            loop.run_until_complete(
+                bot.send_message(
+                    chat_id=chat_id,
+                    text=result.message,
+                    reply_markup=InlineKeyboardMarkup(result.buttons) if result.buttons else None,
+                )
+            )
+            loop.close()
+            logger.info("Scheduled prompt sent req=%s", result.request_id[-8:] if result.request_id else "n/a")
+        except Exception as e:
+            logger.error("Scheduled prompt send failed: %s", e)
+    else:
+        logger.error("Scheduled prompt workflow failed: %s", result.message)
+
+    # ── Schedule nudge using nudge_due_at stored in SQLite by prompt_repo.create() ──
+    if result.request_id and _scheduler_ref is not None:
+        req = prompt_repo.PromptRepository().get(result.request_id)
+        nudge_time = req.nudge_due_at if req and req.nudge_due_at else None
+
+        if nudge_time:
+            _scheduler_ref.add_job(
+                _deliver_nudge,
+                "date",
+                run_date=nudge_time,
+                args=[result.request_id, chat_id, bot],
+                id=f"nudge_{result.request_id[-8:]}",
+                misfire_grace_time=60,
+                replace_existing=True,
+            )
+            logger.info("Nudge scheduled for req=%s at %s", result.request_id[-8:], nudge_time)
+        else:
+            logger.warning("No nudge_due_at found for req=%s", result.request_id[-8:])
+    elif _scheduler_ref is None:
+        logger.warning("Scheduler not ready — nudge not scheduled")
 
 
 def start(app) -> BlockingScheduler:
